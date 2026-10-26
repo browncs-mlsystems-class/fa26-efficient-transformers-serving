@@ -1,0 +1,10 @@
+einops
+numpy
+torch
+torchmetrics
+torchvision
+tqdm
+matplotlib
+tiktoken
+transformers
+ipykernel
