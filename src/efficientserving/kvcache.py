@@ -10,3 +10,11 @@ import torch
 class KVCache:
     # TODO (KV cache): Implement!
     pass
+
+class KVCacheContinuous:
+    # TODO (KV cache for continuous batching): Implement!
+    pass
+
+class KVCachePaged:
+    # TODO (KV cache for paged continuous batching): Implement!
+    pass

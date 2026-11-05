@@ -5,16 +5,17 @@
 #   ./run.sh speculative
 #   ./run.sh sweep --rates 1,2,4 --batch_sizes 1,4
 #   ./run.sh plot                      # doesn't need a GPU, so runs on this machine
+#   ./run.sh plot_memory               # same
 # Set TIME (default 00:10:00) for longer runs, e.g. TIME=00:30:00 ./run.sh sweep
 
 usage() {
-    echo "Usage: $0 (kvcache | speculative | serve | sweep | plot) [run.py options]"
+    echo "Usage: $0 (kvcache | speculative | serve | sweep | plot | plot_memory) [run.py options]"
     echo "Run '$0 <command> --help' to see each command's options."
     exit 1
 }
 
 case "$1" in
-    kvcache|speculative|serve|sweep|plot) ;;
+    kvcache|speculative|serve|sweep|plot|plot_memory) ;;
     *) usage ;;
 esac
 
@@ -27,7 +28,7 @@ echo "> ${EXEC_CMD[*]}"
 unset LD_LIBRARY_PATH # changes made for project 3 interferes with Python virtual env searching for CUDA dependencies
 
 # Plotting and --help don't need a GPU
-if [[ "$1" == "plot" || " $* " == *" --help "* || " $* " == *" -h "* ]]; then
+if [[ "$1" == "plot" || "$1" == "plot_memory" || " $* " == *" --help "* || " $* " == *" -h "* ]]; then
     exec "${EXEC_CMD[@]}"
 fi
 

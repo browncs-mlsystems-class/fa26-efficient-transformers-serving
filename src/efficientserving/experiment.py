@@ -33,6 +33,8 @@ async def run_sweep(args):
 
     rates = _float_list(args.rates)
     batch_sizes = _int_list(args.batch_sizes)
+    if args.server_type != 'static' and args.kv_cache_tokens is not None:
+        batch_sizes = [args.kv_cache_tokens // args.max_seq_len]
 
     trace = client.load_trace(args.trace_file, args.trace_type, args.prompt_length,
                               args.max_new_tokens, enc, args.num_requests)
@@ -58,7 +60,10 @@ async def run_sweep(args):
             # reseed per point, so a point's arrival times don't depend on the points before it
             random.seed(args.seed)
             server = client.build_server(model, args.server_type, args.device, use_kv,
-                                         batch_size=bs, max_wait=args.max_wait)
+                                         batch_size=bs, max_wait=args.max_wait,
+                                         max_seq_len=args.max_seq_len,
+                                         block_size=args.block_size,
+                                         kv_cache_tokens=args.kv_cache_tokens)
             await server.start()
             try:
                 stats = await client.poisson_arrival_client(
@@ -71,7 +76,9 @@ async def run_sweep(args):
 
             config = {
                 'server_type': args.server_type, 'use_kv': use_kv, 'batch_size': bs,
-                'max_wait': args.max_wait, 'rate': rate, 'max_time': args.max_time,
+                'max_wait': args.max_wait, 'max_seq_len': args.max_seq_len,
+                'block_size': args.block_size,
+                'kv_cache_tokens': args.kv_cache_tokens, 'rate': rate, 'max_time': args.max_time,
                 'trace_type': args.trace_type, 'trace_file': args.trace_file,
                 'init_from': args.init_from,
                 'prompt_length': args.prompt_length, 'max_new_tokens': args.max_new_tokens,

@@ -20,6 +20,8 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import torch
 
+from efficientserving.utils import set_dtype
+
 DEFAULT_TRACE = str(Path(__file__).resolve().parent / "data" / "humaneval.jsonl")
 
 
@@ -80,9 +82,15 @@ def add_trace_args(p: argparse.ArgumentParser):
                         "through them until --max_time")
     p.add_argument('--temperature', type=float, default=1.0, help="temperature for sampling")
     p.add_argument('--top_k', type=int, default=None, help="top_k for sampling")
-    p.add_argument('--server_type', type=str, default='static', choices=['static', 'continuous'])
+    p.add_argument('--server_type', type=str, default='static', choices=['static', 'continuous', 'paged'])
     p.add_argument('--max_wait', type=float, default=2.0,
                    help="Max wait time for static batching (seconds)")
+    p.add_argument('--max_seq_len', type=int, default=512,
+                   help="tokens per KV cache slot, and the longest request allowed (continuous and paged only)")
+    p.add_argument('--block_size', type=int, default=16,
+                   help="tokens per KV cache block (paged only)")
+    p.add_argument('--kv_cache_tokens', type=int, default=None,
+                   help="total KV cache tokens (continuous and paged only)")
     p.add_argument('--max_time', type=float, default=120.0,
                    help="Maximum time to submit requests (seconds)")
     p.add_argument('--seed', type=int, default=42, help="Random seed for reproducibility")
@@ -139,14 +147,21 @@ def parse_args():
                    help="only plot runs of this trace, e.g. short_uniform "
                         "(required if --stat_dir has runs of several traces)")
 
+    p = sub.add_parser('plot_memory', help='plot KV cache memory usage from saved stats')
+    p.add_argument("--stat_dir", default="stat", help="directory of stats JSON files")
+    p.add_argument("--out", default="graph/kv_memory.png", help="output image path")
+    p.add_argument("--trace", default=None,
+                   help="only plot runs of this trace, e.g. mixed_short_long "
+                        "(required if --stat_dir has runs of several traces)")
+    p.add_argument("--rates", default=None,
+                   help="comma-separated offered loads to include (default: all)")
+
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    if getattr(args, 'dtype', 'auto') != 'auto':
-        from efficientserving.utils import set_dtype
-        set_dtype(args.dtype)
+    set_dtype(getattr(args, 'dtype', 'auto'))
     if args.command in ('kvcache', 'speculative'):
         from efficientserving.offline import run_offline
         run_offline(args, args.command)
@@ -162,6 +177,9 @@ def main():
                                 x=args.x, server_type=args.server_type,
                                 min_sustained=args.min_sustained, rates=args.rates,
                                 trace=args.trace)
+    elif args.command == 'plot_memory':
+        from efficientserving.plotting import plot_memory
+        plot_memory(stat_dir=args.stat_dir, out=args.out, trace=args.trace, rates=args.rates)
 
 
 if __name__ == '__main__':

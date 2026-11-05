@@ -41,6 +41,7 @@ class InferenceServer(ABC):
         self._task: asyncio.Task | None = None
         self._stop_signal = asyncio.Event()
         self._next_id = 0
+        self.memory_log = [] 
 
     async def start(self):
         self._task = asyncio.create_task(self.run_engine_loop())

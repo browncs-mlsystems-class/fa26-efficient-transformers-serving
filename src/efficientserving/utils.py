@@ -36,7 +36,7 @@ def get_dtype() -> torch.dtype:
         return _dtype_override
     if DEBUG:
         return torch.float32
-    if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+    if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8:
         return torch.bfloat16
     return torch.float16
 

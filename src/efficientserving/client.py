@@ -293,13 +293,14 @@ async def poisson_arrival_client(
         'p99_latency': p99_latency,
         'latencies': latencies,
         'results': results,
+        'memory_log': server.memory_log,
     }
 
 
 # Keys describing a single run's configuration (the independent variables).
-_CONFIG_KEYS = ('server_type', 'use_kv', 'batch_size', 'max_wait', 'rate',
-                'max_time', 'trace_type', 'trace_file', 'init_from', 'prompt_length',
-                'max_new_tokens', 'seed')
+_CONFIG_KEYS = ('server_type', 'use_kv', 'batch_size', 'max_wait', 'max_seq_len', 'block_size',
+                'kv_cache_tokens', 'rate', 'max_time', 'trace_type', 'trace_file',
+                'init_from', 'prompt_length', 'max_new_tokens', 'seed')
 
 
 def trace_name_of(trace_file: str | None) -> str:
@@ -328,13 +329,16 @@ def save_stats(stats: dict, config: dict, stat_dir: str = "stat") -> str:
         'p90_latency': stats['p90_latency'],
         'p99_latency': stats['p99_latency'],
         'latencies': list(stats['latencies'].values()),
+        'memory_log': stats.get('memory_log', []),
     }
     ts = time.strftime("%Y%m%d_%H%M%S")
     kv_tag = "kv" if config['use_kv'] else "base"
     trace_name = trace_name_of(config.get('trace_file'))
+    blk_tag = f"_blk{config['block_size']}" if config['server_type'] == 'paged' else ""
     fname = os.path.join(
         stat_dir,
-        f"{trace_name}_{config['server_type']}_{kv_tag}_bs{config['batch_size']}_rate{config['rate']}_{ts}.json",
+        f"{trace_name}_{config['server_type']}_{kv_tag}_bs{config['batch_size']}{blk_tag}"
+        f"_rate{config['rate']}_{ts}.json",
     )
     with open(fname, 'w') as f:
         json.dump(record, f, indent=2)
@@ -343,23 +347,30 @@ def save_stats(stats: dict, config: dict, stat_dir: str = "stat") -> str:
 
 
 def build_server(model: GPT, server_type: str, device: str, use_kv: bool,
-                 batch_size: int = 1, max_wait: float = 60.0,
-                 server_kwargs: dict | None = None) -> InferenceServer:
+                 batch_size: int = 1, max_wait: float = 60.0, max_seq_len: int = 512, block_size: int = 16,
+                 kv_cache_tokens: int | None = None, server_kwargs: dict | None = None) -> InferenceServer:
     """Build an inference server instance.
 
     Args:
         model: The GPT model instance
-        server_type: Type of server ('static' or 'continuous')
+        server_type: Type of server ('static', 'continuous' or 'paged')
         device: device the model runs on
         use_kv: whether the server generates with the KV cache
-        batch_size: static batching only -- maximum batch size
+        batch_size: maximum batch size (static), or KV cache memory equal to that many
+            slots of max_seq_len tokens (continuous and paged) if kv_cache_tokens is not given
         max_wait: static batching only -- maximum time (s) to wait to fill a batch
+        max_seq_len: continuous and paged only -- tokens per KV cache slot, and the longest request
+        block_size: paged only -- tokens per KV cache block
+        kv_cache_tokens: continuous and paged only -- total KV cache tokens
+            (default: batch_size * max_seq_len)
         server_kwargs: additional kwargs for the server constructor
 
     Returns:
         An InferenceServer subclass instance
     """
     kwargs = {'device': device, 'use_kv': use_kv}
+    if kv_cache_tokens is None:
+        kv_cache_tokens = batch_size * max_seq_len
     if server_type == 'static':
         from efficientserving.server.static_batching import StaticBatchServer
         kwargs.update(batch_size=batch_size, max_wait_time_s=max_wait)
@@ -367,8 +378,15 @@ def build_server(model: GPT, server_type: str, device: str, use_kv: bool,
         return StaticBatchServer(model=model, **kwargs)
     elif server_type == 'continuous':
         from efficientserving.server.continuous_batching import ContinuousBatchServer
+        kwargs.update(num_slots=kv_cache_tokens // max_seq_len, max_seq_len=max_seq_len)
         kwargs.update(server_kwargs or {})
         return ContinuousBatchServer(model=model, **kwargs)
+    elif server_type == 'paged':
+        from efficientserving.server.paged_continuous_batching import PagedContinuousBatchServer
+        kwargs.update(num_blocks=kv_cache_tokens // block_size,
+                      block_size=block_size, max_seq_len=max_seq_len)
+        kwargs.update(server_kwargs or {})
+        return PagedContinuousBatchServer(model=model, **kwargs)
     else:
         raise ValueError(f"Unknown server type: {server_type}")
 
@@ -391,13 +409,21 @@ async def run_client(args):
     # call Warmup process (separately)
     utils.warmup_model(model, prompts, args.device, enc, use_kv=args.use_kv)
 
+    if args.server_type != 'static' and args.kv_cache_tokens is not None:
+        args.batch_size = args.kv_cache_tokens // args.max_seq_len
+
     # Create inference server
     server = build_server(model, args.server_type, args.device, args.use_kv,
                           batch_size=args.batch_size, max_wait=args.max_wait,
-                          server_kwargs=json.loads(args.server_kwargs))
+                          max_seq_len=args.max_seq_len, block_size=args.block_size,
+                          kv_cache_tokens=args.kv_cache_tokens, server_kwargs=json.loads(args.server_kwargs))
     print(f"[Client] Server type: {args.server_type}, use_kv: {args.use_kv}")
     if args.server_type == 'static':
         print(f"[Client] Batch size: {args.batch_size}, Max wait: {args.max_wait}s")
+    elif args.server_type == 'continuous':
+        print(f"[Client] Slots: {args.batch_size} x {args.max_seq_len} tokens")
+    else:
+        print(f"[Client] Blocks: {server.num_blocks} x {args.block_size} tokens")
     print()
 
     # Start server
