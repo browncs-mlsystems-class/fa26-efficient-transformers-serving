@@ -28,7 +28,7 @@ class InferenceServer(ABC):
     Subclasses will implement their own engine loop logic and
     relevant batching/admission logic.
 
-    Every server must support both values of `use_kv`: generating with the KV
+    Static batching server must support both values of `use_kv`: generating with the KV
     cache (True) or recomputing the whole sequence at every step (False).
     """
 

@@ -109,7 +109,7 @@ def plot_memory(stat_dir: str = "stat", out: str = "graph/kv_memory.png",
         required when `stat_dir` holds runs of more than one trace
         rates: comma-separated offered loads to include (default: every rate present)
     """
-    # TODO (Part 4): Plot Graph 5 of the handout and save it to `out`.
+    # TODO (Part 3B): Plot Graph 6 of the handout and save it to `out`.
     #   Each continuous or paged record has a `memory_log`: one sample per scheduler step,
     #   each a dict with 'time', 'cached' (tokens actually in the KV cache) and 'reserved'
     #   (tokens set aside for the running requests).
